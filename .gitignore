@@ -1,0 +1,17 @@
+*.pyc
+*.txt
+*~
+*.log
+*.swp
+
+nohup.out
+
+*.torrent
+*.zip
+*.tar
+*.tar.bz2
+*.tar.gz
+
+deps/
+.cache/
+
