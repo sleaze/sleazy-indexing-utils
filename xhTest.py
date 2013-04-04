@@ -1,21 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import fileinput, logging
+import itertools, fileinput, logging, sys, multiprocessing, subprocess
 
+from lib import settings
 from lib.xh import router
-#from lib.xh.models import User #, Gallery, Video
 
 
 logger = logging.getLogger('xhamster')
 
-
-#session = Session()
-
-#u = User(name="Rbledsoe59", createdTs='1434 days ago', modifiedTs='4 hours ago')
-
-#session.add(u)
-#session.commit()
+PARALLEL = True
 
 
 #router.routeByUrl('http://xhamster.com/photos/view/1046191-17343648.html')
@@ -26,28 +20,36 @@ logger = logging.getLogger('xhamster')
 #router.routeByUrl('http://xhamster.com/user/photo/Rbledsoe59/new-1.html')
 #router.routeByUrl('http://xhamster.com/user/video/Rbledsoe59/new-1.html')
 
-
-import multiprocessing, subprocess
-
-from lib import settings
-
 def doIt(url):
+    if len(url.strip()) == 0:
+        return
     try:
-        router.routeByUrl(url)
+        return router.routeByUrl(url)
     except:
         try:
-            router.routeByUrl(url)
+            return router.routeByUrl(url)
         except Exception, e:
             print 'CAUGHT E on 2nd attempt: %s' % (e,)
 
-#lines = filter(
-#with open(settings.basePath + '/urls.txt', 'r') as fh:
-#    lines = filter(lambda line: len(line.strip()) != 0, fh.readlines())
+if PARALLEL is True:
+    logger.info('Operating in parallel')
+    pool = multiprocessing.Pool(25)
+    #r = pool.imap_unordered(doIt, itertools.ifilter(lambda line: len(line.strip()) != 0, fileinput.input()), chunksize=10)
+    [x for x in pool.imap_unordered(doIt, fileinput.input(), chunksize=10)]
+    #r = pool.map(doIt, filter(lambda line: len(line.strip()) != 0, fileinput.input()), chunksize=10)
+    #print itertools.ifilter(lambda line: len(line.strip()) != 0, fileinput.input())
+    #r = pool.map(doIt, itertools.ifilter(lambda line: len(line.strip()) != 0, sys.stdin.readlines()), chunksize=10)
+    try:
+        pool.close()
+        pool.join()
+    except TypeError:
+        pass
 
-pool = multiprocessing.Pool(25)
-r = pool.map(doIt, filter(lambda line: len(line.strip()) != 0, fileinput.input()), chunksize=10)
-#r = pool.map(router.routeByUrl, fh.readlines(), chunksize=10)
-pool.close()
-#r.wait()
-#pool.join()
+    #r = pool.map(router.routeByUrl, fh.readlines(), chunksize=10)
+    #r.wait()
+    #pool.join()
+else:
+    logger.info('Operating serially')
+    map(doIt, filter(lambda line: len(line.strip()) != 0, fileinput.input()))
+
 

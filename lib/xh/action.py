@@ -8,6 +8,7 @@ import logging
 from pyquery import PyQuery as pq
 from dateutil import parser as dateParser
 from datetime import datetime
+import re
 
 
 logger = logging.getLogger('xhamster')
@@ -73,11 +74,13 @@ def video(url, identifier, extra):
         logger.info('Already knew about video id={0} userId={1} title="{2}"'.format(identifier, video.userId, video.title))
 
     else:
+
         # Add the video to the db.
         def discoverInfo():
             discovered = {
                 'id': identifier,
-                'title': d('th.mTitle h1').text(),
+                'title': d('h2.gr').text(),
+                'description': d('div#videoInfoBox .desc').text().replace('Description: ', '', 1),
                 'duration': None,
                 'createdTs': None,
                 'modifiedTs': datetime.now(),
@@ -85,34 +88,52 @@ def video(url, identifier, extra):
             }
 
             #f = d('tr td b:nth-child(1)')#b.text:contains("^.*$")')
-            for row in d('table.stats_table tr'):
-                children = row.getchildren()
-                if len(children) > 1:
-                    colName = children[0].getchildren()[0].text.lower()
-                    colValue = children[1]
-                    #print colName, colValue
+            for row in d('div#videoInfoBox .item'):
+                text = pq(row).text().strip()
+                ltext = text.lower()
 
-                    if colName == 'runtime:':
-                        discovered['duration'] = colValue.text
+                if ltext.startswith('added by'):
+                    text = re.sub(r'^Added by:?\s+', '', text, flags=re.I)
+                    username = text[0:text.index(' ')]
+                    discovered['userId'] = getOrCreateUser(username, session).id
 
-                    elif colName == 'added on:':
-                        discovered['createdTs'] = dateParser.parse(colValue.text)
+                    # Also grab hinted createdTs.
+                    createdTs = pq(row)('span.hint').attr['hint']
+                    discovered['createdTs'] = dateParser.parse(createdTs)
 
-                    elif colName == 'description:':
-                        discovered['description'] = colValue.text
+                elif ltext.startswith('runtime'):
+                    text = re.sub(r'^Runtime:?\s+', '', text.strip(), flags=re.I)
+                    discovered['duration'] = text
 
-                    elif colName == 'channels:':
-                        discovered['categories'] = map(lambda x: x.text, colValue.getchildren())
 
-                    elif colName == 'added by:':
-                        name = colValue.getchildren()[0].getchildren()[0].text
-                        print 'name=',name
-                        discovered['userId'] = getOrCreateUser(name, session).id
+                #elif colName == 'added on:':
+                #    discovered['createdTs'] = dateParser.parse(colValue.text)
+
+                #elif colName == 'description:':
+                #    discovered['description'] = colValue.text
+
+                #elif colName == 'channels:':
+                #    discovered['categories'] = map(lambda x: x.text, colValue.getchildren())
+
+                #elif colName == 'added by:':
+                #    name = colValue.getchildren()[0].getchildren()[0].text
+                #    print 'name=',name
+                #    discovered['userId'] = getOrCreateUser(name, session).id
+
+            discovered['categories'] = [pq(row).text() for row in d('#channels a')]
 
             print discovered
             return discovered
 
-        discovered = discoverInfo()
+        try:
+            discovered = discoverInfo()
+        except Exception, e:
+            print 'caught',e
+            import traceback
+            traceback.print_exc()
+            raise e
+
+        assert discovered['duration'] is not None, 'Failed to parse the duration, something is probably very broken'
 
         video = Video(**discovered)
         logger.info('Added new video, id={0} userId={1} title="{2}"'.format(identifier, discovered['userId'], discovered['title']))
