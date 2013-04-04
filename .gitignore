@@ -12,6 +12,5 @@ nohup.out
 *.tar.bz2
 *.tar.gz
 
-deps/
 .cache/
 
