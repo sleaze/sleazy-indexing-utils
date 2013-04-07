@@ -67,8 +67,9 @@ for filter in $filters; do
 
         next=$(echo -e "$html" | \
             grep 'href *= *"\(https\?:\/\/xhamster.com\)\?\/new' | \
-            grep -i 'next' | \
-            sed 's/^.*href *= *"\([^"]\{1,\}\).*$/\1/')
+            grep -B2 -i 'last' | \
+            head -n1 | \
+            sed 's/^.*href *= *"\([^"]*\).*$/\1/')
 
         if [ -z "$next" ]; then
             nextUrl=''
