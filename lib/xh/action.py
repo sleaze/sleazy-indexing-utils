@@ -26,7 +26,7 @@ def getOrCreateUser(name, session=None):
 #        if needToClose:
 #            session.close()
 
-    print 'user=',user
+    #print 'user=',user
     return user
 
 def video(url, identifier, extra):
@@ -39,14 +39,14 @@ def video(url, identifier, extra):
         return session.query(Video).filter(Video.id==identifier).filter(Video.deleted==True).first() is not None
 
     if isDeletedLocally():
-        logger.info('Skipping video id={0} because it is already marked as deleted'.format(identifier))
+        logger.info('Skipping videoId={0} because it is already marked as deleted'.format(identifier))
 #        session.close()
         return
 
     d = pq(wget(url))
 
     def isDeleted():
-        return d('span.error').text() is not None and d('span.error').text().lower() == 'this video was deleted'
+        return d('div.error').text() is not None and d('div.error').text().lower() == 'this video was deleted'
 
     if isDeleted():
         video = session.query(Video).filter(Video.id==identifier).first()
@@ -67,25 +67,22 @@ def video(url, identifier, extra):
 
     video = session.query(Video).filter(Video.id==identifier).first()
 
-    if video is not None:
-        # Update the last modified ts.
-        video.modifiedTs = datetime.now()
-        session.add(video)
-        logger.info('Already knew about video id={0} userId={1} title="{2}"'.format(identifier, video.userId, video.title))
-
-    else:
-
-        # Add the video to the db.
-        def discoverInfo():
+    def discoverInfo():
+        """Scrape video info fields from HTML."""
+        try:
             discovered = {
                 'id': identifier,
                 'title': d('h2.gr').text(),
-                'description': d('div#videoInfoBox .desc').text().replace('Description: ', '', 1),
+                'description': None,
                 'duration': None,
                 'createdTs': None,
                 'modifiedTs': datetime.now(),
                 'userId': None
             }
+
+            maybeDescription = d('div#videoInfoBox .desc').text()
+            if maybeDescription is not None:
+                discovered['description'] = re.sub(r'^Description:? +', '', maybeDescription.strip(), flags=re.I)
 
             #f = d('tr td b:nth-child(1)')#b.text:contains("^.*$")')
             for row in d('div#videoInfoBox .item'):
@@ -105,35 +102,35 @@ def video(url, identifier, extra):
                     text = re.sub(r'^Runtime:?\s+', '', text.strip(), flags=re.I)
                     discovered['duration'] = text
 
-
-                #elif colName == 'added on:':
-                #    discovered['createdTs'] = dateParser.parse(colValue.text)
-
-                #elif colName == 'description:':
-                #    discovered['description'] = colValue.text
-
-                #elif colName == 'channels:':
-                #    discovered['categories'] = map(lambda x: x.text, colValue.getchildren())
-
-                #elif colName == 'added by:':
-                #    name = colValue.getchildren()[0].getchildren()[0].text
-                #    print 'name=',name
-                #    discovered['userId'] = getOrCreateUser(name, session).id
-
             discovered['categories'] = [pq(row).text() for row in d('#channels a')]
 
             print discovered
+            assert discovered['duration'] is not None, 'Failed to parse the duration, something is probably very broken'
+            assert discovered['description'] is not None, 'Failed to parse the description, something is probably somewhat broken'
             return discovered
 
-        try:
-            discovered = discoverInfo()
         except Exception, e:
             print 'caught',e
             import traceback
             traceback.print_exc()
             raise e
 
-        assert discovered['duration'] is not None, 'Failed to parse the duration, something is probably very broken'
+    if video is not None:
+        # Update the last modified ts.
+        #video.modifiedTs = datetime.now()
+        logger.info('Already knew about video id={0} userId={1} title="{2}"'.format(identifier, video.userId, video.title))
+        logger.info('Refreshing info for videoId={0}'.format(video.id))
+
+        discovered = discoverInfo()
+
+        for k, v in discovered.items():
+            setattr(video, k, v)
+        session.add(video)
+
+    else:
+
+        # Add the video to the db.
+        discovered = discoverInfo()
 
         video = Video(**discovered)
         logger.info('Added new video, id={0} userId={1} title="{2}"'.format(identifier, discovered['userId'], discovered['title']))
